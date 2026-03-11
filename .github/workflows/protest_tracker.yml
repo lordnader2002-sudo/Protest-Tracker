@@ -79,7 +79,7 @@ jobs:
           fi
 
           if [ -f "docs/latest.xlsx" ]; then
-            git add docs/latest.xlsx docs/index.html
+            git add docs/latest.xlsx docs/previous.xlsx docs/index.html docs/last_updated.txt
           fi
 
           git commit -m "Update seen store and latest report" || echo "No changes to commit"
