@@ -113,6 +113,7 @@ EXPORT_MAIN_COLUMNS = [
     "Event Key",
     "Is New",
     "First Seen",
+    "Last Seen",
     "Protest Name",
     "Date",
     "Time",
@@ -133,6 +134,7 @@ EXPORT_MATCH_COLUMNS = [
     "Event Key",
     "Is New",
     "First Seen",
+    "Last Seen",
     "Protest Name",
     "Date",
     "Time",
@@ -298,11 +300,11 @@ def apply_seen_flags(
     now_ts: int,
 ) -> pd.DataFrame:
     """
-    Adds/updates: Event Key, Is New, First Seen
+    Adds/updates: Event Key, Is New, First Seen, Last Seen.
     Updates store in-place (first_seen/last_seen).
     """
     if df.empty:
-        for col in ["Event Key", "Is New", "First Seen"]:
+        for col in ["Event Key", "Is New", "First Seen", "Last Seen"]:
             if col not in df.columns:
                 df[col] = []
         return df
@@ -310,6 +312,7 @@ def apply_seen_flags(
     event_keys: List[str] = []
     is_new_flags: List[bool] = []
     first_seen_vals: List[str] = []
+    last_seen_vals: List[str] = []
 
     for _, row in df.iterrows():
         source = str(row.get("Source", "") or "")
@@ -325,15 +328,18 @@ def apply_seen_flags(
             store[key] = {"first_seen": now_ts, "last_seen": now_ts}
             is_new_flags.append(True)
             first_seen_vals.append(epoch_to_iso(now_ts))
+            last_seen_vals.append(epoch_to_iso(now_ts))
         else:
             rec["last_seen"] = now_ts
             is_new_flags.append(False)
             first_seen_vals.append(epoch_to_iso(int(rec.get("first_seen") or now_ts)))
+            last_seen_vals.append(epoch_to_iso(now_ts))
 
     df = df.copy()
     df["Event Key"] = event_keys
     df["Is New"] = is_new_flags
     df["First Seen"] = first_seen_vals
+    df["Last Seen"] = last_seen_vals
     return df
 
 
@@ -1362,6 +1368,7 @@ def build_matches_for_events(
     df["Event Key"] = ""
     df["Is New"] = False
     df["First Seen"] = ""
+    df["Last Seen"] = ""
     return df[EXPORT_MATCH_COLUMNS]
 
 
@@ -1524,6 +1531,7 @@ def run_mobilize_collection(
     df["Event Key"] = ""
     df["Is New"] = False
     df["First Seen"] = ""
+    df["Last Seen"] = ""
     return df[EXPORT_MATCH_COLUMNS]
 
 
@@ -1604,7 +1612,6 @@ def main() -> int:
     # Apply seen flags to matches + main
     general_matches_df = apply_seen_flags(general_matches_df, seen_store, now_ts)
     general_main_df = matches_to_main_df(general_matches_df)
-    general_main_df = apply_seen_flags(general_main_df, seen_store, now_ts)
 
     # -------------------------
     # NoKings (Mobilize + Action Network) - 30 days default
@@ -1671,7 +1678,6 @@ def main() -> int:
             )
 
         no_kings_main_df = matches_to_main_df(no_kings_matches_all)
-        no_kings_main_df = apply_seen_flags(no_kings_main_df, seen_store, now_ts)
 
         if not no_kings_main_df.empty:
             no_kings_main_df = no_kings_main_df.drop_duplicates(
