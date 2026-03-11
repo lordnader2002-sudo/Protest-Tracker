@@ -60,15 +60,6 @@ jobs:
           # Write a timestamp file (for the webpage)
           date -u +"%Y-%m-%d %H:%M UTC" > docs/last_updated.txt
 
-      - name: Upload output artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: protest-tracker-output
-          path: |
-            outputs/*.xlsx
-            seen_events.json
-          if-no-files-found: error
-
       - name: Commit seen store + latest report back to repo
         run: |
           git config user.name "github-actions[bot]"
@@ -79,7 +70,19 @@ jobs:
           fi
 
           if [ -f "docs/latest.xlsx" ]; then
-            git add docs/latest.xlsx docs/previous.xlsx docs/index.html docs/last_updated.txt
+            git add docs/latest.xlsx
+          fi
+
+          if [ -f "docs/previous.xlsx" ]; then
+            git add docs/previous.xlsx
+          fi
+
+          if [ -f "docs/last_updated.txt" ]; then
+            git add docs/last_updated.txt
+          fi
+
+          if [ -f "docs/index.html" ]; then
+            git add docs/index.html
           fi
 
           git commit -m "Update seen store and latest report" || echo "No changes to commit"
