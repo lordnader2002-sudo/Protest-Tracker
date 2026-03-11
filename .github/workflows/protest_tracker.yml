@@ -3,7 +3,7 @@ name: Protest Tracker
 on:
   workflow_dispatch:
   schedule:
-    - cron: "15 12 * * *"
+    - cron: "0 17 * * *"
 
 permissions:
   contents: write
@@ -43,6 +43,13 @@ jobs:
             --no-autosize \
             --seen-store "seen_events.json"
 
+      - name: Publish latest report to GitHub Pages (docs/latest.xlsx)
+        run: |
+          mkdir -p docs
+          LATEST="$(ls -1t outputs/*.xlsx | head -n 1)"
+          echo "Latest report: $LATEST"
+          cp "$LATEST" docs/latest.xlsx
+
       - name: Upload output artifact
         uses: actions/upload-artifact@v4
         with:
@@ -52,14 +59,18 @@ jobs:
             seen_events.json
           if-no-files-found: error
 
-      - name: Commit seen store back to repo
+      - name: Commit seen store + latest report back to repo
         run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
           if [ -f "seen_events.json" ]; then
-            git config user.name "github-actions[bot]"
-            git config user.email "github-actions[bot]@users.noreply.github.com"
             git add seen_events.json
-            git commit -m "Update seen events store" || echo "No changes to commit"
-            git push
-          else
-            echo "seen_events.json not found, skipping commit."
           fi
+
+          if [ -f "docs/latest.xlsx" ]; then
+            git add docs/latest.xlsx docs/index.html
+          fi
+
+          git commit -m "Update seen store and latest report" || echo "No changes to commit"
+          git push
