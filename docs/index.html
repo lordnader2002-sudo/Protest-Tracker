@@ -9,18 +9,20 @@
     .card{border:1px solid #ddd;border-radius:12px;padding:18px}
     a.button{display:inline-block;padding:10px 14px;border-radius:10px;border:1px solid #333;text-decoration:none;margin-right:10px}
     small{color:#555}
-    code{background:#f6f8fa;padding:2px 6px;border-radius:6px}
   </style>
 </head>
 <body>
   <h1>Protest Tracker</h1>
+
   <div class="card">
     <p>
       <a class="button" href="./latest.xlsx">Download latest report (.xlsx)</a>
       <a class="button" href="./previous.xlsx">Download previous report (.xlsx)</a>
     </p>
+
     <p><small>Last updated: <span id="lastUpdated">loading…</span></small></p>
-    <p><small>If you get “file not found,” wait a minute and refresh — GitHub Pages can take a bit after updates.</small></p>
+    <p><small>Coverage: <b>General</b> = next 7 days, <b>NoKings</b> = next 30 days.</small></p>
+    <p><small>If you get “file not found,” wait a minute and refresh (GitHub Pages sometimes lags after updates).</small></p>
   </div>
 
   <script>
