@@ -46,9 +46,19 @@ jobs:
       - name: Publish latest report to GitHub Pages (docs/latest.xlsx)
         run: |
           mkdir -p docs
+
+          # Move old latest to previous (if it exists)
+          if [ -f "docs/latest.xlsx" ]; then
+            cp "docs/latest.xlsx" "docs/previous.xlsx"
+          fi
+
+          # Copy newest output to docs/latest.xlsx
           LATEST="$(ls -1t outputs/*.xlsx | head -n 1)"
           echo "Latest report: $LATEST"
           cp "$LATEST" docs/latest.xlsx
+
+          # Write a timestamp file (for the webpage)
+          date -u +"%Y-%m-%d %H:%M UTC" > docs/last_updated.txt
 
       - name: Upload output artifact
         uses: actions/upload-artifact@v4
