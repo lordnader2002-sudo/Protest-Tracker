@@ -7,15 +7,27 @@
   <style>
     body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;max-width:900px;margin:40px auto;padding:0 16px;line-height:1.4}
     .card{border:1px solid #ddd;border-radius:12px;padding:18px}
-    a.button{display:inline-block;padding:10px 14px;border-radius:10px;border:1px solid #333;text-decoration:none}
+    a.button{display:inline-block;padding:10px 14px;border-radius:10px;border:1px solid #333;text-decoration:none;margin-right:10px}
     small{color:#555}
+    code{background:#f6f8fa;padding:2px 6px;border-radius:6px}
   </style>
 </head>
 <body>
   <h1>Protest Tracker</h1>
   <div class="card">
-    <p><a class="button" href="./latest.xlsx">Download latest report (.xlsx)</a></p>
-    <p><small>Updated automatically by GitHub Actions. If you get a “file not found,” the first scheduled run may not have published yet.</small></p>
+    <p>
+      <a class="button" href="./latest.xlsx">Download latest report (.xlsx)</a>
+      <a class="button" href="./previous.xlsx">Download previous report (.xlsx)</a>
+    </p>
+    <p><small>Last updated: <span id="lastUpdated">loading…</span></small></p>
+    <p><small>If you get “file not found,” wait a minute and refresh — GitHub Pages can take a bit after updates.</small></p>
   </div>
+
+  <script>
+    fetch("./last_updated.txt", { cache: "no-store" })
+      .then(r => r.ok ? r.text() : Promise.reject())
+      .then(t => document.getElementById("lastUpdated").textContent = t.trim())
+      .catch(() => document.getElementById("lastUpdated").textContent = "not available yet");
+  </script>
 </body>
 </html>
