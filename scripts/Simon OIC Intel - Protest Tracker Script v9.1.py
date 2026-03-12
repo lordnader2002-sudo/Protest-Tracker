@@ -49,7 +49,7 @@ DEFAULT_RADIUS_MILES = 3.0
 DEFAULT_WINDOW_DAYS = 7
 DEFAULT_NO_KINGS_WINDOW_DAYS = 30
 DEFAULT_API_BUFFER_MILES = 8.0
-DEFAULT_MIN_REQUEST_INTERVAL = 0.6
+DEFAULT_MIN_REQUEST_INTERVAL = 0.1
 
 DEFAULT_SHEET_MAIN = "Protests"
 DEFAULT_SHEET_MATCHES = "AllMatches"
@@ -410,7 +410,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--api-buffer-miles", type=float, default=DEFAULT_API_BUFFER_MILES)
 
     p.add_argument("--min-request-interval", type=float, default=DEFAULT_MIN_REQUEST_INTERVAL)
-    p.add_argument("--workers", type=int, default=2)
+    p.add_argument("--workers", type=int, default=8)
 
     p.add_argument("--output", default=None)
     p.add_argument("--output-dir", default=DEFAULT_OUTPUT_DIR)
@@ -1252,24 +1252,31 @@ def collect_action_network_events(
     done = 0
     failed = 0
     events: List[Dict[str, Any]] = []
+    lock = threading.Lock()
 
-    for url in uniq_urls:
-        try:
-            ev = scrape_action_network_event_page(url, timeout=timeout)
-            if not ev:
-                continue
-            if not (now_epoch <= int(ev["timeslot_start"]) < end_epoch):
-                continue
-            events.append(ev)
-        except Exception as e:
-            failed += 1
-            print(f"[ActionNetwork] event page failed: {url}: {e}", file=sys.stderr)
-        finally:
-            done += 1
-            if show_progress:
-                line = render_progress("AN scrape", done, len(uniq_urls), start_ts, failed, url[-28:])
-                sys.stdout.write("\r" + line)
-                sys.stdout.flush()
+    def _fetch_one(url: str) -> Optional[Dict[str, Any]]:
+        return scrape_action_network_event_page(url, timeout=timeout)
+
+    with ThreadPoolExecutor(max_workers=10) as ex:
+        futures = {ex.submit(_fetch_one, url): url for url in uniq_urls}
+        for fut in as_completed(futures):
+            url = futures[fut]
+            try:
+                ev = fut.result()
+                if ev and (now_epoch <= int(ev["timeslot_start"]) < end_epoch):
+                    with lock:
+                        events.append(ev)
+            except Exception as e:
+                with lock:
+                    failed += 1
+                print(f"[ActionNetwork] event page failed: {url}: {e}", file=sys.stderr)
+            finally:
+                with lock:
+                    done += 1
+                if show_progress:
+                    line = render_progress("AN scrape", done, len(uniq_urls), start_ts, failed, url[-28:])
+                    sys.stdout.write("\r" + line)
+                    sys.stdout.flush()
 
     if show_progress:
         sys.stdout.write("\n")

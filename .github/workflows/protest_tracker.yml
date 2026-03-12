@@ -11,7 +11,7 @@ permissions:
 jobs:
   run-tracker:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 15
 
     steps:
       - name: Checkout
@@ -41,7 +41,9 @@ jobs:
             --no-kings \
             --no-kings-window-days 30 \
             --no-autosize \
-            --seen-store "seen_events.json"
+            --seen-store "seen_events.json" \
+            --workers 8 \
+            --min-request-interval 0.1
 
       - name: Publish latest report to GitHub Pages (docs/latest.xlsx)
         run: |
