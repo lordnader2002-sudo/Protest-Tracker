@@ -102,7 +102,7 @@ def build_map_section(map_data: dict) -> str:
 
     return f"""
 <div id="map-panel" class="tab-panel" hidden>
-  <div id="map" style="height:600px;width:100%;border-radius:0 6px 6px 6px;"></div>
+  <div id="map" style="height:80vh;min-height:500px;width:100%;border-radius:0 6px 6px 6px;"></div>
 </div>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -278,7 +278,7 @@ def main() -> int:
     width: 280px; max-width: 100%; padding: 5px 10px;
     border: 1px solid #ccc; border-radius: 4px; font-size: 0.88em;
   }}
-  .table-wrap {{ overflow-x: auto; max-height: 68vh; overflow-y: auto; }}
+  .table-wrap {{ overflow-x: auto; max-height: 78vh; overflow-y: auto; }}
   table {{ border-collapse: collapse; width: 100%; font-size: 0.82em; }}
   thead tr {{ position: sticky; top: 0; z-index: 1; }}
   th {{
