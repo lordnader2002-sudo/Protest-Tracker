@@ -1586,6 +1586,8 @@ def matches_to_main_df(matches_df: pd.DataFrame) -> pd.DataFrame:
             "Event ID",
             "Timeslot Start (epoch)",
             "Matched Properties (within radius)",
+            "Event Lat",
+            "Event Lon",
         ]
     ].sort_values(by=["Is New", "Distance to Nearest Property (miles)", "Date", "Time"], ascending=[False, True, True, True])
 

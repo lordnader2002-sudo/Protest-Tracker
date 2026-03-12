@@ -1,82 +1,139 @@
-# Protest Tracker (Daily Report)
+# Protest Tracker
 
-## ✅ Download the Latest Tracker
-Open this link and click **“Download latest report (.xlsx)”**:
-
-**GitHub Pages report page:**  
-https://lordnader2002-sudo.github.io/protest-tracker/
-
-> If you ever see “File not found”, wait 1–2 minutes and refresh. Sometimes GitHub Pages takes a moment to update after the daily run.
-
-## Screenshot: Where to Download
-![Download latest tracker button](docs/images/download.png)
+Automatically monitors **Mobilize.us** and **Action Network** for protests and events near company properties. Runs on a schedule via GitHub Actions, publishes results to GitHub Pages, and sends the Excel report as a workflow artifact.
 
 ---
 
-## What this is
-This repo automatically generates a daily Excel report of:
+## Accessing the Report
 
-- **Protests/events near company properties** (General view)
-- **“No Kings” related events** (NoKings tab)
+**Live web report (HTML):**
+👉 https://lordnader2002-sudo.github.io/Protest-Tracker/
 
-It runs automatically using GitHub Actions and publishes the newest report to a simple webpage so anyone can download it.
+The page includes:
+- **Summary tab** — event counts by distance, property, and organization
+- **Protests tab** — general events within the search radius
+- **No Kings tab** — No Kings–specific events
+- **Map tab** — interactive map with property and event pins (click any pin for details)
+- **Download Excel** button at the top of the page
 
----
+The Excel file (`docs/latest.xlsx`) is also available directly from the page or as a GitHub Actions artifact attached to each run.
 
-## What’s inside the Excel file
-The downloaded Excel file contains multiple tabs:
-
-### 1) `Protests` (General)
-Events found in the **next 7 days**.
-
-### 2) `NoKings`
-No Kings events found in the **next 30 days** (for collection/tracking).
-
-### 3) Property tabs (optional)
-If enabled, you may also see one tab per property showing matches for that property.
+> If you see a 404, wait 1–2 minutes and refresh — GitHub Pages can take a moment after a new run.
 
 ---
 
-## What “Is New” means
-The tracker keeps a memory of previously discovered events.
+## Excel Workbook
 
-- **Is New = TRUE** → this event was discovered for the first time ever
-- **Is New = FALSE** → it was already found on a previous run
+When you open the downloaded `.xlsx` file you'll see the following sheets:
 
-New events are highlighted so you can spot them quickly.
+| Sheet | Contents |
+|---|---|
+| **Summary** | Counts by distance band, property, and organization |
+| **Protests** | General events found within the next ~7 days |
+| **NoKings** | No Kings events found within the next 30 days (configurable) |
+| **AllMatches** *(hidden)* | Every property/event pair within radius (right-click any tab → Unhide) |
 
----
+### Row color coding
 
-## When it runs
-The tracker runs **once per day** via GitHub Actions.
+| Color | Meaning |
+|---|---|
+| 🔴 Red | Event is **< 1 mile** from a property |
+| 🟠 Amber | Event is **1–2 miles** from a property |
+| 🟢 Green | Event is **> 2 miles** from a property |
 
-Note: GitHub schedules are based on UTC time. The job is configured to approximately match a “daily noon ET” cadence.
+### Special columns
 
----
+| Column | Meaning |
+|---|---|
+| **Is New** | `TRUE` = first time this event has been detected (highlighted gold) |
+| **Is Duplicate** | `TRUE` = another row shares the same title, date, and location (shown in italic gray) |
+| **Event URL** | Clickable hyperlink to the event page |
 
-## Where the report comes from
-The tracker collects event data from:
-- **Mobilize.us** (main source)
-- **Action Network** (No Kings public event pages)
-
----
-
-## For technical users (optional)
-- Script: `scripts/Simon OIC Intel - Protest Tracker Script v9.1.py`
-- Properties list: `data/properties.csv`
-- Workflow: `.github/workflows/protest_tracker.yml`
-- Published report file:
-  - `docs/latest.xlsx` (latest)
-  - `docs/previous.xlsx` (previous)
-  - `docs/last_updated.txt` (timestamp)
-- Event history store:
-  - `seen_events.json` (used to flag “Is New”)
+Each sheet also has:
+- **Column auto-filter** dropdowns for quick filtering
+- **Thick borders** separating each distance group
+- **Bold** on key columns (name, date, distance)
 
 ---
 
-## Troubleshooting (simple)
-- **Download link shows 404:** wait a minute and refresh; GitHub Pages may still be deploying.
-- **Excel opens but looks empty:** that usually means there were no events within the configured radius/time window.
-- **Some properties are skipped:** usually caused by invalid/missing zip codes or missing lat/lon in the properties file.
+## Live HTML Report Features
+
+- **Sortable columns** — click any column header to sort ▲▼
+- **Live text filter** — type in the filter box above a table to narrow rows instantly
+- **Interactive map** — color-coded circle markers per event, 🏢 markers for properties; click any pin for a popup
+- **Tabs** for Summary, Protests, No Kings, and Map
+- Updates automatically after every run
 
 ---
+
+## Schedule & Manual Runs
+
+The tracker runs automatically **Monday, Wednesday, Friday at 5:00 PM UTC**.
+
+You can also trigger it manually from the **Actions** tab → **Protest Tracker** → **Run workflow**, with optional overrides:
+
+| Input | Default | Description |
+|---|---|---|
+| `radius_miles` | `3` | Search radius around each property |
+| `no_kings_window_days` | `30` | How many days ahead to search for No Kings events |
+| `workers` | `8` | Parallel threads for geocoding/fetching |
+
+---
+
+## Data Sources
+
+| Source | Used For |
+|---|---|
+| [Mobilize.us](https://www.mobilize.us) | General protest/event search |
+| [Action Network](https://actionnetwork.org) | No Kings event pages |
+
+---
+
+## Repository Structure
+
+```
+.
+├── .github/
+│   └── workflows/
+│       └── protest_tracker.yml   # Scheduled + manual GitHub Actions workflow
+├── data/
+│   └── properties.csv            # Properties to monitor (name, address, lat, lon, zip)
+├── docs/
+│   ├── index.html                # Auto-generated HTML report (GitHub Pages)
+│   ├── latest.xlsx               # Most recent Excel output
+│   ├── previous.xlsx             # Previous run's Excel output
+│   ├── map_data.json             # Event + property coordinates for the map
+│   └── last_updated.txt          # Timestamp of last successful run
+├── scripts/
+│   ├── Simon OIC Intel - Protest Tracker Script v9.1.py   # Main tracker script
+│   └── generate_report.py        # Generates docs/index.html from the Excel + map data
+├── seen_events.json              # Persistent store of previously seen event IDs
+└── requirements.txt              # Python dependencies
+```
+
+---
+
+## Properties File (`data/properties.csv`)
+
+Each row represents a property to monitor. Required columns:
+
+| Column | Description |
+|---|---|
+| `property_id` | Unique identifier |
+| `name` | Display name |
+| `address` | Full street address |
+| `lat` / `lon` | Coordinates (used for distance calculation) |
+| `postal_code` | Property zip code |
+| `query_zipcode` | Zip code used to query Mobilize (usually same as postal_code) |
+
+---
+
+## Troubleshooting
+
+| Symptom | Likely Cause |
+|---|---|
+| Page shows 404 | GitHub Pages still deploying — wait 1–2 min and refresh |
+| Excel opens empty | No events found within the radius/time window |
+| Property skipped in output | Missing or invalid `lat`, `lon`, or `query_zipcode` in properties.csv |
+| Map tab shows no pins | `map_data.json` not yet generated — run the workflow once |
+| "Is New" always TRUE | `seen_events.json` was reset or is missing |
