@@ -1597,6 +1597,7 @@ def main() -> int:
     # General (Mobilize) - 7 days default
     # -------------------------
     end_general = now_ts + args.window_days * 24 * 60 * 60
+    print(f"[{dt.datetime.now().strftime('%H:%M:%S')}] Starting General Mobilize collection ({len(query_zips)} ZIPs)...", flush=True)
     general_matches_df = run_mobilize_collection(
         zip_groups=zip_groups,
         query_zips=query_zips,
@@ -1617,6 +1618,7 @@ def main() -> int:
     )
 
     # Apply seen flags to matches + main
+    print(f"[{dt.datetime.now().strftime('%H:%M:%S')}] General collection done. Applying seen flags...", flush=True)
     general_matches_df = apply_seen_flags(general_matches_df, seen_store, now_ts)
     general_main_df = matches_to_main_df(general_matches_df)
 
@@ -1630,8 +1632,11 @@ def main() -> int:
         org_id = args.no_kings_org_id
         org_name = "No Kings"
         if org_id is None:
+            print(f"[{dt.datetime.now().strftime('%H:%M:%S')}] Resolving NoKings org by slug...", flush=True)
             org_id, org_name = resolve_mobilize_org_by_slug(args.no_kings_slug, timeout=args.timeout, limiter=limiter)
+            print(f"[{dt.datetime.now().strftime('%H:%M:%S')}] Resolved org: {org_name} (id={org_id})", flush=True)
 
+        print(f"[{dt.datetime.now().strftime('%H:%M:%S')}] Starting NoKings Mobilize collection ({len(query_zips)} ZIPs)...", flush=True)
         nk_mobilize_matches = run_mobilize_collection(
             zip_groups=zip_groups,
             query_zips=query_zips,
@@ -1651,6 +1656,7 @@ def main() -> int:
             show_progress=args.progress,
         )
 
+        print(f"[{dt.datetime.now().strftime('%H:%M:%S')}] NoKings Mobilize done. Starting Action Network scrape...", flush=True)
         seeds = [s.strip() for s in (args.action_network_seeds or "").split(",") if s.strip()] or DEFAULT_ACTION_NETWORK_SEEDS
 
         an_events = collect_action_network_events(
@@ -1663,6 +1669,7 @@ def main() -> int:
             show_progress=args.progress,
         )
 
+        print(f"[{dt.datetime.now().strftime('%H:%M:%S')}] Action Network scrape done ({len(an_events)} events). Matching...", flush=True)
         nk_action_matches = build_matches_for_events(
             events=an_events,
             props=props,

@@ -32,7 +32,8 @@ jobs:
       - name: Run tracker
         run: |
           mkdir -p outputs
-          python "scripts/Simon OIC Intel - Protest Tracker Script v9.1.py" \
+          echo "=== Tracker start: $(date -u) ==="
+          time python "scripts/Simon OIC Intel - Protest Tracker Script v9.1.py" \
             --properties "data/properties.csv" \
             --output-dir "outputs" \
             --output-prefix "mobilize_protests" \
@@ -43,7 +44,9 @@ jobs:
             --no-autosize \
             --seen-store "seen_events.json" \
             --workers 8 \
-            --min-request-interval 0.1
+            --min-request-interval 0.1 \
+            --progress
+          echo "=== Tracker end: $(date -u) ==="
 
       - name: Publish latest report to GitHub Pages (docs/latest.xlsx)
         run: |
