@@ -1,6 +1,6 @@
 # Protest Tracker
 
-Automatically monitors **Mobilize.us** and **Action Network** for protests and events near company properties. Runs on a schedule via GitHub Actions, publishes results to GitHub Pages, and sends the Excel report as a workflow artifact.
+Automatically monitors **Mobilize.us** and **Action Network** for protests and events. Runs on a schedule via GitHub Actions, publishes results to GitHub Pages, and sends the Excel report as a workflow artifact.
 
 ---
 
