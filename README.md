@@ -89,30 +89,6 @@ You can also trigger it manually from the **Actions** tab → **Protest Tracker*
 
 ---
 
-## Repository Structure
-
-```
-.
-├── .github/
-│   └── workflows/
-│       └── protest_tracker.yml   # Scheduled + manual GitHub Actions workflow
-├── data/
-│   └── properties.csv            # Properties to monitor (name, address, lat, lon, zip)
-├── docs/
-│   ├── index.html                # Auto-generated HTML report (GitHub Pages)
-│   ├── latest.xlsx               # Most recent Excel output
-│   ├── previous.xlsx             # Previous run's Excel output
-│   ├── map_data.json             # Event + property coordinates for the map
-│   └── last_updated.txt          # Timestamp of last successful run
-├── scripts/
-│   ├── Simon OIC Intel - Protest Tracker Script v9.1.py   # Main tracker script
-│   └── generate_report.py        # Generates docs/index.html from the Excel + map data
-├── seen_events.json              # Persistent store of previously seen event IDs
-└── requirements.txt              # Python dependencies
-```
-
----
-
 ## Properties File (`data/properties.csv`)
 
 Each row represents a property to monitor. Required columns:
