@@ -64,6 +64,9 @@ jobs:
           # Write a timestamp file (for the webpage)
           date -u +"%Y-%m-%d %H:%M UTC" > docs/last_updated.txt
 
+      - name: Generate HTML report
+        run: python scripts/generate_report.py
+
       - name: Commit seen store + latest report back to repo
         run: |
           git config user.name "github-actions[bot]"
