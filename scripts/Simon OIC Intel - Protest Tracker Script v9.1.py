@@ -1629,14 +1629,7 @@ def main() -> int:
     if args.no_kings:
         end_nk = now_ts + args.no_kings_window_days * 24 * 60 * 60
 
-        org_id = args.no_kings_org_id
-        org_name = "No Kings"
-        if org_id is None:
-            print(f"[{dt.datetime.now().strftime('%H:%M:%S')}] Resolving NoKings org by slug...", flush=True)
-            org_id, org_name = resolve_mobilize_org_by_slug(args.no_kings_slug, timeout=args.timeout, limiter=limiter)
-            print(f"[{dt.datetime.now().strftime('%H:%M:%S')}] Resolved org: {org_name} (id={org_id})", flush=True)
-
-        print(f"[{dt.datetime.now().strftime('%H:%M:%S')}] Starting NoKings Mobilize collection ({len(query_zips)} ZIPs)...", flush=True)
+        print(f"[{dt.datetime.now().strftime('%H:%M:%S')}] Starting NoKings Mobilize collection ({len(query_zips)} ZIPs, keyword filter)...", flush=True)
         nk_mobilize_matches = run_mobilize_collection(
             zip_groups=zip_groups,
             query_zips=query_zips,
@@ -1651,10 +1644,14 @@ def main() -> int:
             workers=args.workers,
             radius_miles=args.radius_miles,
             source_label="NoKings-Mobilize",
-            org_name=org_name,
-            organization_id=org_id,
+            org_name="No Kings",
+            organization_id=None,
             show_progress=args.progress,
         )
+        if not nk_mobilize_matches.empty:
+            mask = nk_mobilize_matches["Protest Name"].str.lower().str.contains("no kings", na=False)
+            nk_mobilize_matches = nk_mobilize_matches[mask]
+            print(f"[{dt.datetime.now().strftime('%H:%M:%S')}] NoKings keyword filter: kept {mask.sum()} of {len(mask)} events.", flush=True)
 
         print(f"[{dt.datetime.now().strftime('%H:%M:%S')}] NoKings Mobilize done. Starting Action Network scrape...", flush=True)
         seeds = [s.strip() for s in (args.action_network_seeds or "").split(",") if s.strip()] or DEFAULT_ACTION_NETWORK_SEEDS
