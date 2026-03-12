@@ -1823,6 +1823,8 @@ def main() -> int:
             apply_sheet_formatting(writer, DEFAULT_SHEET_MATCHES)
             if not args.no_highlight_new:
                 apply_highlight_new_rows(writer, DEFAULT_SHEET_MATCHES)
+            # Hide the sheet so it exists for reference but isn't visible by default
+            writer.sheets[DEFAULT_SHEET_MATCHES].sheet_state = "hidden"
 
         if args.no_kings:
             nk_out = mark_duplicates(_prep_for_output(no_kings_main_df, _OUTPUT_HIDE_MAIN, "Distance to Nearest Property (miles)"))
