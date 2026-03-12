@@ -475,6 +475,18 @@ def apply_sheet_formatting(writer: pd.ExcelWriter, sheet_name: str) -> None:
                 left=left_side, right=right_side,
             )
 
+    # Make Event URL cells into clickable hyperlinks
+    url_col_idx = headers.index("Event URL") + 1 if "Event URL" in headers else None
+    if url_col_idx:
+        from openpyxl.styles import Font as _Font
+        link_font = _Font(color="0563C1", underline="single")
+        for row_idx in range(2, ws.max_row + 1):
+            cell = ws.cell(row=row_idx, column=url_col_idx)
+            url = str(cell.value or "").strip()
+            if url.startswith("http"):
+                cell.hyperlink = url
+                cell.font = link_font
+
     # Italic gray text for duplicate rows (applied after bold so bold is preserved)
     dup_col_idx = headers.index("Is Duplicate") + 1 if "Is Duplicate" in headers else None
     if dup_col_idx:
