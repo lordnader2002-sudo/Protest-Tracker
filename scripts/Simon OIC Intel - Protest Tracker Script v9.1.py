@@ -148,6 +148,16 @@ EXPORT_MATCH_COLUMNS = [
     "Timeslot Start (epoch)",
 ]
 
+# Columns dropped from Excel output (kept internally for processing/dedup)
+_OUTPUT_HIDE_MAIN = {
+    "Source", "Organization", "Nearest Property ID",
+    "Event ID", "Timeslot Start (epoch)", "Matched Properties (within radius)",
+}
+_OUTPUT_HIDE_MATCH = {
+    "Source", "Organization", "Property ID",
+    "Event ID", "Timeslot Start (epoch)",
+}
+
 QueryParams = Union[Dict[str, str], Sequence[Tuple[str, str]]]
 
 
@@ -378,6 +388,58 @@ def apply_highlight_new_rows(writer: pd.ExcelWriter, sheet_name: str) -> None:
 
     rng = f"{get_column_letter(start_col)}{start_row}:{get_column_letter(end_col)}{end_row}"
     ws.conditional_formatting.add(rng, rule)
+
+
+def apply_sheet_formatting(writer: pd.ExcelWriter, sheet_name: str) -> None:
+    """Freeze top row, bold key columns, and shade rows by distance to property."""
+    try:
+        from openpyxl.styles import PatternFill, Font
+    except Exception:
+        return
+
+    ws = writer.sheets.get(sheet_name)
+    if ws is None or ws.max_row < 2:
+        return
+
+    headers = [ws.cell(row=1, column=c).value for c in range(1, ws.max_column + 1)]
+
+    # Freeze top row
+    ws.freeze_panes = "A2"
+
+    # Bold specific columns (header + all data rows)
+    bold_names = {
+        "Protest Name", "Date", "Time",
+        "Nearest Property", "Property",
+        "Distance to Nearest Property (miles)", "Distance to Property (miles)",
+    }
+    bold_font = Font(bold=True)
+    for col_idx, header in enumerate(headers, start=1):
+        if header in bold_names:
+            for row_idx in range(1, ws.max_row + 1):
+                ws.cell(row=row_idx, column=col_idx).font = bold_font
+
+    # Distance-based row shading
+    dist_col_idx = None
+    for name in ("Distance to Nearest Property (miles)", "Distance to Property (miles)"):
+        if name in headers:
+            dist_col_idx = headers.index(name) + 1
+            break
+
+    if dist_col_idx is None:
+        return
+
+    fill_red   = PatternFill(start_color="FFCCCC", end_color="FFCCCC", fill_type="solid")  # < 1 mile
+    fill_amber = PatternFill(start_color="FFE5B4", end_color="FFE5B4", fill_type="solid")  # 1-2 miles
+    fill_green = PatternFill(start_color="CCFFCC", end_color="CCFFCC", fill_type="solid")  # > 2 miles
+
+    for row_idx in range(2, ws.max_row + 1):
+        try:
+            dist = float(ws.cell(row=row_idx, column=dist_col_idx).value)
+        except (TypeError, ValueError):
+            continue
+        fill = fill_red if dist < 1.0 else (fill_amber if dist < 2.0 else fill_green)
+        for col_idx in range(1, ws.max_column + 1):
+            ws.cell(row=row_idx, column=col_idx).fill = fill
 
 
 # -----------------------------
@@ -1701,25 +1763,37 @@ def main() -> int:
     # -------------------------
     # Write workbook
     # -------------------------
+    def _prep_for_output(df: pd.DataFrame, hide: set, dist_col: str) -> pd.DataFrame:
+        out = df.drop(columns=[c for c in hide if c in df.columns])
+        if dist_col in out.columns:
+            out = out.sort_values(dist_col, ascending=True, na_position="last").reset_index(drop=True)
+        return out
+
     print("Writing Excel workbook...", flush=True)
     with pd.ExcelWriter(output_path, engine="openpyxl") as writer:
-        general_main_df.to_excel(writer, index=False, sheet_name=DEFAULT_SHEET_MAIN)
+        main_out = _prep_for_output(general_main_df, _OUTPUT_HIDE_MAIN, "Distance to Nearest Property (miles)")
+        main_out.to_excel(writer, index=False, sheet_name=DEFAULT_SHEET_MAIN)
         if not args.no_autosize:
             autosize_worksheet_columns(writer, DEFAULT_SHEET_MAIN)
+        apply_sheet_formatting(writer, DEFAULT_SHEET_MAIN)
         if not args.no_highlight_new:
             apply_highlight_new_rows(writer, DEFAULT_SHEET_MAIN)
 
         if args.keep_all_matches:
-            general_matches_df.to_excel(writer, index=False, sheet_name=DEFAULT_SHEET_MATCHES)
+            matches_out = _prep_for_output(general_matches_df, _OUTPUT_HIDE_MATCH, "Distance to Property (miles)")
+            matches_out.to_excel(writer, index=False, sheet_name=DEFAULT_SHEET_MATCHES)
             if not args.no_autosize:
                 autosize_worksheet_columns(writer, DEFAULT_SHEET_MATCHES)
+            apply_sheet_formatting(writer, DEFAULT_SHEET_MATCHES)
             if not args.no_highlight_new:
                 apply_highlight_new_rows(writer, DEFAULT_SHEET_MATCHES)
 
         if args.no_kings:
-            no_kings_main_df.to_excel(writer, index=False, sheet_name=DEFAULT_SHEET_NO_KINGS)
+            nk_out = _prep_for_output(no_kings_main_df, _OUTPUT_HIDE_MAIN, "Distance to Nearest Property (miles)")
+            nk_out.to_excel(writer, index=False, sheet_name=DEFAULT_SHEET_NO_KINGS)
             if not args.no_autosize:
                 autosize_worksheet_columns(writer, DEFAULT_SHEET_NO_KINGS)
+            apply_sheet_formatting(writer, DEFAULT_SHEET_NO_KINGS)
             if not args.no_highlight_new:
                 apply_highlight_new_rows(writer, DEFAULT_SHEET_NO_KINGS)
 
