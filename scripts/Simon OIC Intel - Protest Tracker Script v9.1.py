@@ -1567,29 +1567,33 @@ def matches_to_main_df(matches_df: pd.DataFrame) -> pd.DataFrame:
         if col not in main_df.columns:
             main_df[col] = "" if col != "Is New" else False
 
-    main_df = main_df[
-        [
-            "Source",
-            "Organization",
-            "Event Key",
-            "Is New",
-            "First Seen",
-            "Protest Name",
-            "Date",
-            "Time",
-            "Location",
-            "Nearest Property",
-            "Nearest Property ID",
-            "Distance to Nearest Property (miles)",
-            "Event URL",
-            "Event Type",
-            "Event ID",
-            "Timeslot Start (epoch)",
-            "Matched Properties (within radius)",
-            "Event Lat",
-            "Event Lon",
-        ]
-    ].sort_values(by=["Is New", "Distance to Nearest Property (miles)", "Date", "Time"], ascending=[False, True, True, True])
+    base_cols = [
+        "Source",
+        "Organization",
+        "Event Key",
+        "Is New",
+        "First Seen",
+        "Protest Name",
+        "Date",
+        "Time",
+        "Location",
+        "Nearest Property",
+        "Nearest Property ID",
+        "Distance to Nearest Property (miles)",
+        "Event URL",
+        "Event Type",
+        "Event ID",
+        "Timeslot Start (epoch)",
+        "Matched Properties (within radius)",
+    ]
+    # Include lat/lon when present (needed for map export)
+    for _col in ("Event Lat", "Event Lon"):
+        if _col in main_df.columns:
+            base_cols.append(_col)
+    main_df = main_df[base_cols].sort_values(
+        by=["Is New", "Distance to Nearest Property (miles)", "Date", "Time"],
+        ascending=[False, True, True, True],
+    )
 
     return main_df
 
