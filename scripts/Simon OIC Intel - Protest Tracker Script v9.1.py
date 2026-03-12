@@ -441,6 +441,42 @@ def apply_sheet_formatting(writer: pd.ExcelWriter, sheet_name: str) -> None:
         for col_idx in range(1, ws.max_column + 1):
             ws.cell(row=row_idx, column=col_idx).fill = fill
 
+    # Italic gray text for duplicate rows (applied after bold so bold is preserved)
+    dup_col_idx = headers.index("Is Duplicate") + 1 if "Is Duplicate" in headers else None
+    if dup_col_idx:
+        for row_idx in range(2, ws.max_row + 1):
+            val = ws.cell(row=row_idx, column=dup_col_idx).value
+            if val is True or str(val).upper() == "TRUE":
+                for col_idx in range(1, ws.max_column + 1):
+                    cell = ws.cell(row=row_idx, column=col_idx)
+                    cell.font = Font(bold=cell.font.bold, italic=True, color="999999")
+
+
+def mark_duplicates(df: pd.DataFrame) -> pd.DataFrame:
+    """Add 'Is Duplicate' column: True for rows sharing the same title+date+location."""
+    df = df.copy()
+    title_col = "Protest Name" if "Protest Name" in df.columns else None
+    date_col = "Date" if "Date" in df.columns else None
+    loc_col = "Location" if "Location" in df.columns else None
+
+    if title_col and date_col and loc_col:
+        def _norm(s: object) -> str:
+            return " ".join(str(s or "").lower().split())
+        fp = (df[title_col].map(_norm) + "|" +
+              df[date_col].map(_norm) + "|" +
+              df[loc_col].map(_norm))
+        df["Is Duplicate"] = fp.duplicated(keep="first")
+    else:
+        df["Is Duplicate"] = False
+
+    # Place "Is Duplicate" immediately after "Is New"
+    if "Is New" in df.columns:
+        cols = [c for c in df.columns if c != "Is Duplicate"]
+        cols.insert(cols.index("Is New") + 1, "Is Duplicate")
+        df = df[cols]
+
+    return df
+
 
 # -----------------------------
 # Rate limiter
@@ -1771,7 +1807,7 @@ def main() -> int:
 
     print("Writing Excel workbook...", flush=True)
     with pd.ExcelWriter(output_path, engine="openpyxl") as writer:
-        main_out = _prep_for_output(general_main_df, _OUTPUT_HIDE_MAIN, "Distance to Nearest Property (miles)")
+        main_out = mark_duplicates(_prep_for_output(general_main_df, _OUTPUT_HIDE_MAIN, "Distance to Nearest Property (miles)"))
         main_out.to_excel(writer, index=False, sheet_name=DEFAULT_SHEET_MAIN)
         if not args.no_autosize:
             autosize_worksheet_columns(writer, DEFAULT_SHEET_MAIN)
@@ -1780,7 +1816,7 @@ def main() -> int:
             apply_highlight_new_rows(writer, DEFAULT_SHEET_MAIN)
 
         if args.keep_all_matches:
-            matches_out = _prep_for_output(general_matches_df, _OUTPUT_HIDE_MATCH, "Distance to Property (miles)")
+            matches_out = mark_duplicates(_prep_for_output(general_matches_df, _OUTPUT_HIDE_MATCH, "Distance to Property (miles)"))
             matches_out.to_excel(writer, index=False, sheet_name=DEFAULT_SHEET_MATCHES)
             if not args.no_autosize:
                 autosize_worksheet_columns(writer, DEFAULT_SHEET_MATCHES)
@@ -1789,7 +1825,7 @@ def main() -> int:
                 apply_highlight_new_rows(writer, DEFAULT_SHEET_MATCHES)
 
         if args.no_kings:
-            nk_out = _prep_for_output(no_kings_main_df, _OUTPUT_HIDE_MAIN, "Distance to Nearest Property (miles)")
+            nk_out = mark_duplicates(_prep_for_output(no_kings_main_df, _OUTPUT_HIDE_MAIN, "Distance to Nearest Property (miles)"))
             nk_out.to_excel(writer, index=False, sheet_name=DEFAULT_SHEET_NO_KINGS)
             if not args.no_autosize:
                 autosize_worksheet_columns(writer, DEFAULT_SHEET_NO_KINGS)
