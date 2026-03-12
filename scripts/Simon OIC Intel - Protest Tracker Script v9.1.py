@@ -152,10 +152,12 @@ EXPORT_MATCH_COLUMNS = [
 _OUTPUT_HIDE_MAIN = {
     "Source", "Organization", "Nearest Property ID",
     "Event ID", "Timeslot Start (epoch)", "Matched Properties (within radius)",
+    "Event Lat", "Event Lon",  # kept for map export only
 }
 _OUTPUT_HIDE_MATCH = {
     "Source", "Organization", "Property ID",
     "Event ID", "Timeslot Start (epoch)",
+    "Event Lat", "Event Lon",  # kept for map export only
 }
 
 QueryParams = Union[Dict[str, str], Sequence[Tuple[str, str]]]
@@ -391,9 +393,9 @@ def apply_highlight_new_rows(writer: pd.ExcelWriter, sheet_name: str) -> None:
 
 
 def apply_sheet_formatting(writer: pd.ExcelWriter, sheet_name: str) -> None:
-    """Freeze top row, bold key columns, and shade rows by distance to property."""
+    """Freeze top row, bold key columns, shade rows by distance, and draw borders."""
     try:
-        from openpyxl.styles import PatternFill, Font
+        from openpyxl.styles import PatternFill, Font, Border, Side
     except Exception:
         return
 
@@ -440,6 +442,55 @@ def apply_sheet_formatting(writer: pd.ExcelWriter, sheet_name: str) -> None:
         fill = fill_red if dist < 1.0 else (fill_amber if dist < 2.0 else fill_green)
         for col_idx in range(1, ws.max_column + 1):
             ws.cell(row=row_idx, column=col_idx).fill = fill
+
+    # Borders: thin on all data cells, thick around each distance group boundary
+    thin  = Side(style="thin")
+    thick = Side(style="medium")
+
+    # Collect the distance bucket (0=red, 1=amber, 2=green, None=unknown) for each row
+    def _bucket(row_idx: int) -> int | None:
+        try:
+            d = float(ws.cell(row=row_idx, column=dist_col_idx).value)
+            return 0 if d < 1.0 else (1 if d < 2.0 else 2)
+        except (TypeError, ValueError):
+            return None
+
+    last_data_row = ws.max_row
+    last_col = ws.max_column
+
+    for row_idx in range(2, last_data_row + 1):
+        cur_bucket = _bucket(row_idx)
+        prev_bucket = _bucket(row_idx - 1) if row_idx > 2 else None
+        next_bucket = _bucket(row_idx + 1) if row_idx < last_data_row else None
+
+        is_top    = (row_idx == 2) or (cur_bucket != prev_bucket)
+        is_bottom = (row_idx == last_data_row) or (cur_bucket != next_bucket)
+
+        top_side    = thick if is_top    else thin
+        bottom_side = thick if is_bottom else thin
+
+        for col_idx in range(1, last_col + 1):
+            left_side  = thick if col_idx == 1        else thin
+            right_side = thick if col_idx == last_col else thin
+            ws.cell(row=row_idx, column=col_idx).border = Border(
+                top=top_side, bottom=bottom_side,
+                left=left_side, right=right_side,
+            )
+
+    # Make Event URL cells into clickable hyperlinks
+    url_col_idx = headers.index("Event URL") + 1 if "Event URL" in headers else None
+    if url_col_idx:
+        from openpyxl.styles import Font as _Font
+        link_font = _Font(color="0563C1", underline="single")
+        for row_idx in range(2, ws.max_row + 1):
+            cell = ws.cell(row=row_idx, column=url_col_idx)
+            url = str(cell.value or "").strip()
+            if url.startswith("http"):
+                cell.hyperlink = url
+                cell.font = link_font
+
+    # Auto-filter on header row
+    ws.auto_filter.ref = ws.dimensions
 
     # Italic gray text for duplicate rows (applied after bold so bold is preserved)
     dup_col_idx = headers.index("Is Duplicate") + 1 if "Is Duplicate" in headers else None
@@ -1449,6 +1500,8 @@ def build_matches_for_events(
                         "Event Type": ev.get("event_type", ""),
                         "Event ID": ev.get("event_id", ""),
                         "Timeslot Start (epoch)": int(ev.get("timeslot_start") or 0),
+                        "Event Lat": ev.get("event_lat"),
+                        "Event Lon": ev.get("event_lon"),
                     }
                 )
         finally:
@@ -1611,6 +1664,8 @@ def run_mobilize_collection(
                                 "Event Type": ev["event_type"],
                                 "Event ID": ev["event_id"],
                                 "Timeslot Start (epoch)": ev["timeslot_start"],
+                                "Event Lat": ev.get("event_lat"),
+                                "Event Lon": ev.get("event_lon"),
                             }
                         )
             except Exception as e:
@@ -1805,6 +1860,103 @@ def main() -> int:
             out = out.sort_values(dist_col, ascending=True, na_position="last").reset_index(drop=True)
         return out
 
+    # -------------------------
+    # Build Summary stats
+    # -------------------------
+    def _distance_band(d: object) -> str:
+        try:
+            v = float(d)
+            return "< 1 mile" if v < 1.0 else ("1–2 miles" if v < 2.0 else "> 2 miles")
+        except (TypeError, ValueError):
+            return "Unknown"
+
+    def _build_summary(df: pd.DataFrame, dist_col: str) -> pd.DataFrame:
+        if df.empty:
+            return pd.DataFrame()
+        df = df.copy()
+        df["_band"] = df[dist_col].map(_distance_band)
+        band_counts = (
+            df.groupby("_band", sort=False)
+            .size()
+            .reindex(["< 1 mile", "1–2 miles", "> 2 miles", "Unknown"])
+            .dropna()
+            .astype(int)
+            .reset_index()
+        )
+        band_counts.columns = ["Distance Band", "Event Count"]
+
+        prop_col = "Nearest Property" if "Nearest Property" in df.columns else "Property"
+        org_col = "Organization" if "Organization" in df.columns else None
+
+        prop_counts = (
+            df.groupby(prop_col).size()
+            .sort_values(ascending=False)
+            .reset_index()
+        )
+        prop_counts.columns = ["Property", "Event Count"]
+
+        org_counts = pd.DataFrame()
+        if org_col and org_col in df.columns:
+            org_counts = (
+                df.groupby(org_col).size()
+                .sort_values(ascending=False)
+                .reset_index()
+            )
+            org_counts.columns = ["Organization", "Event Count"]
+
+        return band_counts, prop_counts, org_counts
+
+    def _write_summary_sheet(writer: pd.ExcelWriter, frames: list[tuple]) -> None:
+        """Write a Summary sheet with distance bands, top properties, and top orgs."""
+        try:
+            from openpyxl.styles import Font as _Font, PatternFill as _PF, Alignment as _Align
+        except Exception:
+            return
+        ws = writer.book.create_sheet("Summary", 0)  # insert at front
+        writer.sheets["Summary"] = ws
+
+        row = 1
+        header_fill = _PF(start_color="1E2A3A", end_color="1E2A3A", fill_type="solid")
+        header_font = _Font(bold=True, color="FFFFFF")
+        section_font = _Font(bold=True, size=12)
+
+        band_colors = {"< 1 mile": "FFCCCC", "1–2 miles": "FFE5B4", "> 2 miles": "CCFFCC"}
+
+        for sheet_label, band_df, prop_df, org_df in frames:
+            # Section heading
+            ws.cell(row=row, column=1, value=sheet_label).font = section_font
+            row += 1
+
+            # Distance band table
+            for label, df in [("By Distance", band_df), ("By Property", prop_df), ("By Organization", org_df)]:
+                if df is None or df.empty:
+                    continue
+                ws.cell(row=row, column=1, value=label).font = _Font(bold=True, italic=True)
+                row += 1
+                cols = list(df.columns)
+                for ci, col in enumerate(cols, start=1):
+                    c = ws.cell(row=row, column=ci, value=col)
+                    c.font = header_font
+                    c.fill = header_fill
+                row += 1
+                for _, data_row in df.iterrows():
+                    for ci, val in enumerate(data_row, start=1):
+                        c = ws.cell(row=row, column=ci, value=val)
+                        # Color band rows
+                        if label == "By Distance" and ci == 1:
+                            bg = band_colors.get(str(val), "")
+                            if bg:
+                                c.fill = _PF(start_color=bg, end_color=bg, fill_type="solid")
+                    row += 1
+                row += 1  # blank between sub-tables
+
+            row += 1  # blank between sheets
+
+        # Auto-size columns A and B
+        for col in ws.columns:
+            max_len = max((len(str(c.value or "")) for c in col), default=0)
+            ws.column_dimensions[col[0].column_letter].width = min(max_len + 4, 50)
+
     print("Writing Excel workbook...", flush=True)
     with pd.ExcelWriter(output_path, engine="openpyxl") as writer:
         main_out = mark_duplicates(_prep_for_output(general_main_df, _OUTPUT_HIDE_MAIN, "Distance to Nearest Property (miles)"))
@@ -1823,6 +1975,8 @@ def main() -> int:
             apply_sheet_formatting(writer, DEFAULT_SHEET_MATCHES)
             if not args.no_highlight_new:
                 apply_highlight_new_rows(writer, DEFAULT_SHEET_MATCHES)
+            # Hide the sheet so it exists for reference but isn't visible by default
+            writer.sheets[DEFAULT_SHEET_MATCHES].sheet_state = "hidden"
 
         if args.no_kings:
             nk_out = mark_duplicates(_prep_for_output(no_kings_main_df, _OUTPUT_HIDE_MAIN, "Distance to Nearest Property (miles)"))
@@ -1832,6 +1986,75 @@ def main() -> int:
             apply_sheet_formatting(writer, DEFAULT_SHEET_NO_KINGS)
             if not args.no_highlight_new:
                 apply_highlight_new_rows(writer, DEFAULT_SHEET_NO_KINGS)
+
+        # Build and write Summary sheet (inserted at front)
+        summary_frames: list[tuple] = []
+        for sheet_label, df, dist_col in [
+            (DEFAULT_SHEET_MAIN, general_main_df, "Distance to Nearest Property (miles)"),
+            *([(DEFAULT_SHEET_NO_KINGS, no_kings_main_df, "Distance to Nearest Property (miles)")] if args.no_kings else []),
+        ]:
+            band_df, prop_df, org_df = _build_summary(df, dist_col)
+            summary_frames.append((sheet_label, band_df, prop_df, org_df))
+        _write_summary_sheet(writer, summary_frames)
+
+    # -------------------------
+    # Write map data JSON (for HTML report)
+    # -------------------------
+    map_json_path = output_path.parent / "map_data.json" if hasattr(output_path, "parent") else None
+    if map_json_path is None:
+        import pathlib
+        map_json_path = pathlib.Path(output_path).parent / "map_data.json"
+
+    try:
+        import json as _json
+
+        def _safe_float(v: object) -> float | None:
+            try:
+                return float(v) if v is not None else None
+            except (TypeError, ValueError):
+                return None
+
+        def _df_to_map_events(df: pd.DataFrame) -> list[dict]:
+            events: list[dict] = []
+            lat_col = "Event Lat" if "Event Lat" in df.columns else None
+            lon_col = "Event Lon" if "Event Lon" in df.columns else None
+            for _, r in df.iterrows():
+                lat = _safe_float(r.get(lat_col)) if lat_col else None
+                lon = _safe_float(r.get(lon_col)) if lon_col else None
+                if lat is None or lon is None:
+                    continue
+                dist_col = next(
+                    (c for c in ("Distance to Nearest Property (miles)", "Distance to Property (miles)")
+                     if c in df.columns), None
+                )
+                events.append({
+                    "title": str(r.get("Protest Name") or ""),
+                    "date": str(r.get("Date") or ""),
+                    "time": str(r.get("Time") or ""),
+                    "location": str(r.get("Location") or ""),
+                    "nearest_property": str(r.get("Nearest Property") or r.get("Property") or ""),
+                    "distance": _safe_float(r.get(dist_col)) if dist_col else None,
+                    "url": str(r.get("Event URL") or ""),
+                    "event_type": str(r.get("Event Type") or ""),
+                    "is_new": bool(r.get("Is New", False)),
+                    "is_duplicate": bool(r.get("Is Duplicate", False)),
+                    "lat": lat,
+                    "lon": lon,
+                })
+            return events
+
+        map_data = {
+            "events": _df_to_map_events(general_main_df),
+            "no_kings_events": _df_to_map_events(no_kings_main_df) if args.no_kings else [],
+            "properties": [
+                {"name": p.name, "address": p.address, "lat": p.lat, "lon": p.lon}
+                for p in props
+            ],
+        }
+        map_json_path.write_text(_json.dumps(map_data, indent=2), encoding="utf-8")
+        print(f"Map data written to {map_json_path}")
+    except Exception as _e:
+        print(f"Warning: could not write map data: {_e}", file=sys.stderr)
 
     print(f"Wrote General rows: {len(general_main_df)} -> {output_path}")
     if args.no_kings:

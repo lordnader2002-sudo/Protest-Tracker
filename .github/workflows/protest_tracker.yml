@@ -2,6 +2,19 @@ name: Protest Tracker
 
 on:
   workflow_dispatch:
+    inputs:
+      radius_miles:
+        description: 'Search radius in miles (default: 3)'
+        required: false
+        default: '3'
+      no_kings_window_days:
+        description: 'No Kings look-ahead window in days (default: 30)'
+        required: false
+        default: '30'
+      workers:
+        description: 'Parallel worker threads (default: 8)'
+        required: false
+        default: '8'
   schedule:
     - cron: "0 17 * * 1,3,5"
 
@@ -40,9 +53,10 @@ jobs:
             --keep-all-matches \
             --append \
             --no-kings \
-            --no-kings-window-days 30 \
+            --no-kings-window-days "${{ inputs.no_kings_window_days || '30' }}" \
+            --radius-miles "${{ inputs.radius_miles || '3' }}" \
             --seen-store "seen_events.json" \
-            --workers 8 \
+            --workers "${{ inputs.workers || '8' }}" \
             --min-request-interval 0.1 \
             --progress
           echo "=== Tracker end: $(date -u) ==="
@@ -56,16 +70,27 @@ jobs:
             cp "docs/latest.xlsx" "docs/previous.xlsx"
           fi
 
-          # Copy newest output to docs/latest.xlsx
+          # Copy newest output and map data to docs/
           LATEST="$(ls -1t outputs/*.xlsx | head -n 1)"
           echo "Latest report: $LATEST"
           cp "$LATEST" docs/latest.xlsx
+
+          if [ -f "outputs/map_data.json" ]; then
+            cp outputs/map_data.json docs/map_data.json
+          fi
 
           # Write a timestamp file (for the webpage)
           date -u +"%Y-%m-%d %H:%M UTC" > docs/last_updated.txt
 
       - name: Generate HTML report
         run: python scripts/generate_report.py
+
+      - name: Upload Excel artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: protest-tracker-run-${{ github.run_number }}
+          path: docs/latest.xlsx
+          retention-days: 30
 
       - name: Commit seen store + latest report back to repo
         run: |
@@ -90,6 +115,10 @@ jobs:
 
           if [ -f "docs/index.html" ]; then
             git add docs/index.html
+          fi
+
+          if [ -f "docs/map_data.json" ]; then
+            git add docs/map_data.json
           fi
 
           git commit -m "Update seen store and latest report" || echo "No changes to commit"
