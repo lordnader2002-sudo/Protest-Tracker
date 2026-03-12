@@ -391,9 +391,9 @@ def apply_highlight_new_rows(writer: pd.ExcelWriter, sheet_name: str) -> None:
 
 
 def apply_sheet_formatting(writer: pd.ExcelWriter, sheet_name: str) -> None:
-    """Freeze top row, bold key columns, and shade rows by distance to property."""
+    """Freeze top row, bold key columns, shade rows by distance, and draw borders."""
     try:
-        from openpyxl.styles import PatternFill, Font
+        from openpyxl.styles import PatternFill, Font, Border, Side
     except Exception:
         return
 
@@ -440,6 +440,40 @@ def apply_sheet_formatting(writer: pd.ExcelWriter, sheet_name: str) -> None:
         fill = fill_red if dist < 1.0 else (fill_amber if dist < 2.0 else fill_green)
         for col_idx in range(1, ws.max_column + 1):
             ws.cell(row=row_idx, column=col_idx).fill = fill
+
+    # Borders: thin on all data cells, thick around each distance group boundary
+    thin  = Side(style="thin")
+    thick = Side(style="medium")
+
+    # Collect the distance bucket (0=red, 1=amber, 2=green, None=unknown) for each row
+    def _bucket(row_idx: int) -> int | None:
+        try:
+            d = float(ws.cell(row=row_idx, column=dist_col_idx).value)
+            return 0 if d < 1.0 else (1 if d < 2.0 else 2)
+        except (TypeError, ValueError):
+            return None
+
+    last_data_row = ws.max_row
+    last_col = ws.max_column
+
+    for row_idx in range(2, last_data_row + 1):
+        cur_bucket = _bucket(row_idx)
+        prev_bucket = _bucket(row_idx - 1) if row_idx > 2 else None
+        next_bucket = _bucket(row_idx + 1) if row_idx < last_data_row else None
+
+        is_top    = (row_idx == 2) or (cur_bucket != prev_bucket)
+        is_bottom = (row_idx == last_data_row) or (cur_bucket != next_bucket)
+
+        top_side    = thick if is_top    else thin
+        bottom_side = thick if is_bottom else thin
+
+        for col_idx in range(1, last_col + 1):
+            left_side  = thick if col_idx == 1        else thin
+            right_side = thick if col_idx == last_col else thin
+            ws.cell(row=row_idx, column=col_idx).border = Border(
+                top=top_side, bottom=bottom_side,
+                left=left_side, right=right_side,
+            )
 
     # Italic gray text for duplicate rows (applied after bold so bold is preserved)
     dup_col_idx = headers.index("Is Duplicate") + 1 if "Is Duplicate" in headers else None
