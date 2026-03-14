@@ -22,9 +22,11 @@ import argparse
 import datetime as dt
 import html
 import json
+import math
 import os
 import random
 import re
+import sqlite3
 import sys
 import threading
 import time
@@ -33,6 +35,7 @@ from dataclasses import dataclass
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple, Union
 from urllib.parse import urljoin, urlparse
 
+import numpy as np
 import pandas as pd
 import requests
 from geopy.distance import geodesic
@@ -188,6 +191,22 @@ def compute_distance_miles(a: Tuple[float, float], b: Tuple[float, float]) -> fl
     return float(geodesic(a, b).miles)
 
 
+def _haversine_vec(lat1: float, lon1: float, lat2: np.ndarray, lon2: np.ndarray) -> np.ndarray:
+    """Vectorised haversine distance (miles) from one point to an array of points.
+
+    Error vs geodesic is <0.3 % at distances relevant here (<50 miles), which is
+    well within the noise of a 3-mile radius check.  Used as a fast replacement
+    for geodesic inside the hot event-property matching loop.
+    """
+    R = 3958.8  # mean Earth radius in miles
+    phi1 = math.radians(lat1)
+    phi2 = np.radians(lat2)
+    dphi = np.radians(lat2 - lat1)
+    dlam = np.radians(lon2 - lon1)
+    a = np.sin(dphi / 2) ** 2 + math.cos(phi1) * np.cos(phi2) * np.sin(dlam / 2) ** 2
+    return R * 2 * np.arcsin(np.sqrt(np.clip(a, 0, 1)))
+
+
 def inject_stamp(path: str, stamp: str) -> str:
     directory, filename = os.path.split(path)
     if not filename:
@@ -262,23 +281,74 @@ def render_progress(label: str, done: int, total: int, start_ts: float, failed: 
 # -----------------------------
 # Seen store
 # -----------------------------
+def _seen_db_path(json_path: str) -> str:
+    """Return the SQLite path that corresponds to a given seen-store JSON path."""
+    if json_path.endswith(".json"):
+        return json_path[:-5] + ".db"
+    return json_path + ".db"
+
+
 def load_seen_store(path: str) -> Dict[str, Dict[str, Any]]:
+    """Load the seen-events store from SQLite (migrates from JSON on first run)."""
+    db_path = _seen_db_path(path)
+    os.makedirs(os.path.dirname(db_path) or ".", exist_ok=True)
+    con = sqlite3.connect(db_path)
     try:
-        if not os.path.exists(path):
-            return {}
-        with open(path, "r", encoding="utf-8") as f:
-            data = json.load(f)
-        return data if isinstance(data, dict) else {}
-    except Exception:
-        return {}
+        con.execute(
+            "CREATE TABLE IF NOT EXISTS seen_events "
+            "(event_key TEXT PRIMARY KEY, data TEXT NOT NULL)"
+        )
+        con.commit()
+
+        # One-time migration: if old JSON file exists and DB is empty, import it.
+        if os.path.exists(path):
+            count = con.execute("SELECT COUNT(*) FROM seen_events").fetchone()[0]
+            if count == 0:
+                try:
+                    with open(path, "r", encoding="utf-8") as f:
+                        old: Dict[str, Any] = json.load(f)
+                    if isinstance(old, dict) and old:
+                        con.executemany(
+                            "INSERT OR IGNORE INTO seen_events (event_key, data) VALUES (?, ?)",
+                            [(k, json.dumps(v)) for k, v in old.items()],
+                        )
+                        con.commit()
+                        print(
+                            f"[seen_store] Migrated {len(old)} entries from {path} → {db_path}",
+                            file=sys.stderr,
+                        )
+                except Exception as exc:
+                    print(f"[seen_store] Migration warning: {exc}", file=sys.stderr)
+
+        rows = con.execute("SELECT event_key, data FROM seen_events").fetchall()
+        store: Dict[str, Dict[str, Any]] = {}
+        for event_key, data_str in rows:
+            try:
+                store[event_key] = json.loads(data_str)
+            except Exception:
+                pass
+        return store
+    finally:
+        con.close()
 
 
 def save_seen_store(path: str, store: Dict[str, Dict[str, Any]]) -> None:
-    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
-    tmp = f"{path}.tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
-        json.dump(store, f, indent=2, sort_keys=True)
-    os.replace(tmp, path)
+    """Persist the seen-events store to SQLite using upsert (no full rewrite)."""
+    db_path = _seen_db_path(path)
+    os.makedirs(os.path.dirname(db_path) or ".", exist_ok=True)
+    con = sqlite3.connect(db_path)
+    try:
+        con.execute(
+            "CREATE TABLE IF NOT EXISTS seen_events "
+            "(event_key TEXT PRIMARY KEY, data TEXT NOT NULL)"
+        )
+        con.executemany(
+            "INSERT OR REPLACE INTO seen_events (event_key, data) VALUES (?, ?)",
+            [(k, json.dumps(v)) for k, v in store.items()],
+        )
+        con.commit()
+    finally:
+        con.close()
 
 
 def epoch_to_iso(ts: int) -> str:
@@ -1455,6 +1525,14 @@ def build_matches_for_events(
     failed = 0
     rows: List[Dict[str, Any]] = []
 
+    # Pre-build property coordinate arrays once so the inner loop is vectorised.
+    prop_lats = np.array([p.lat for p in props], dtype=np.float64)
+    prop_lons = np.array([p.lon for p in props], dtype=np.float64)
+    # Generous bounding-box margins (slightly wider than radius so we never
+    # miss a borderline property before the precise haversine check).
+    _bbox_lat_margin = radius_miles / 68.0   # 1 degree lat ≈ 69 miles
+    # lon margin is computed per-event based on its latitude (see below)
+
     for ev in events:
         try:
             ev_lat = ev.get("event_lat")
@@ -1479,12 +1557,28 @@ def build_matches_for_events(
                 failed += 1
                 continue
 
-            ep = (float(ev_lat), float(ev_lon))
-            for prop in props:
-                pp = (prop.lat, prop.lon)
-                dist = compute_distance_miles(pp, ep)
+            ep_lat = float(ev_lat)
+            ep_lon = float(ev_lon)
+
+            # --- Bounding-box pre-filter (cheap, eliminates most properties) ---
+            _cos_lat = math.cos(math.radians(ep_lat))
+            _bbox_lon_margin = radius_miles / max(0.01, 68.0 * _cos_lat)
+            bbox_mask = (
+                (np.abs(prop_lats - ep_lat) <= _bbox_lat_margin)
+                & (np.abs(prop_lons - ep_lon) <= _bbox_lon_margin)
+            )
+            cand_idx = np.where(bbox_mask)[0]
+            if cand_idx.size == 0:
+                continue
+
+            # --- Vectorised haversine on the small candidate set only ---
+            dists = _haversine_vec(ep_lat, ep_lon, prop_lats[cand_idx], prop_lons[cand_idx])
+
+            for arr_i, prop_i in enumerate(cand_idx):
+                dist = float(dists[arr_i])
                 if dist > radius_miles:
                     continue
+                prop = props[prop_i]
                 rows.append(
                     {
                         "Source": source_label,
