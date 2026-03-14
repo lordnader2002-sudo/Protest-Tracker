@@ -67,6 +67,25 @@
     text-align: left; font-weight: 600; cursor: default;
   }
   .summary-table td { padding: 5px 14px; border-bottom: 1px solid #e0e0e0; }
+  @media (prefers-color-scheme: dark) {
+    body { background: #0f1117; color: #dde1e8; }
+    h1 { color: #e8eaf0; }
+    .meta { color: #8a9bb0; }
+    .meta a { color: #5b9bd5; }
+    .tab-btn { background: #1e2635; border-color: #333d4f; color: #c5cdd9; }
+    .tab-btn:hover { background: #28334a; }
+    .tab-btn.active { background: #0f1117; border-color: #444f63; border-bottom-color: #0f1117; color: #e8eaf0; }
+    .count { color: #5e6e84; }
+    .tab-btn.active .count { color: #6b7d96; }
+    .tab-panel { background: #0f1117; border-color: #2a3347; }
+    .table-controls { background: #141921; border-bottom-color: #2a3347; }
+    .filter-input { background: #1a2236; border-color: #2a3347; color: #dde1e8; }
+    td { border-bottom-color: #1e2635; }
+    a { color: #5b9bd5; }
+    .summary-wrap { background: #0f1117; }
+    .summary-table td { border-bottom-color: #1e2635; }
+    .swatch { border-color: rgba(255,255,255,0.15); }
+  }
 </style>
 </head>
 <body>
